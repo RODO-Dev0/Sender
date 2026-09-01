@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>img → snd · Sender</title>
+<style>
+  :root {
+    --bg: #0A0D0F;
+    --panel: #12181C;
+    --border: #212B30;
+    --text: #E7EEF0;
+    --text-dim: #8A9AA0;
+    --signal: #59E8D0;
+    --signal-dim: rgba(89,232,208,0.14);
+    --amber: #F0A94E;
+    --danger: #E8596B;
+    --radius: 4px;
+    --font-mono: 'IBM Plex Mono', Consolas, 'SFMono-Regular', ui-monospace, monospace;
+    --font-body: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+  a { color: var(--signal); }
+  main { max-width: 720px; margin: 0 auto; padding: 0 1.25rem 3rem; }
+
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: .78rem; color: var(--text-dim);
+    max-width: 720px; margin: 0 auto;
+  }
+  .topbar .mark { color: var(--signal); }
+  .topbar a { text-decoration: none; }
+  .topbar a:hover { text-decoration: underline; }
+
+  .hero { padding-top: 2.5rem; }
+  .eyebrow { font-family: var(--font-mono); color: var(--signal); font-size: .95rem; margin: 0 0 .4rem; }
+  h1 { font-family: var(--font-mono); font-size: 2.1rem; letter-spacing: -0.01em; margin: 0 0 .75rem; font-weight: 600; }
+  .lede { color: var(--text-dim); max-width: 56ch; line-height: 1.6; margin: 0; }
+
+  .uploader {
+    margin-top: 2rem; border: 1px dashed var(--border); border-radius: var(--radius);
+    padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
+  }
+  .uploader.drag { border-color: var(--signal); background: var(--signal-dim); }
+  .uploader p { color: var(--text-dim); margin: 0; font-size: .92rem; }
+  .uploader img { max-width: 100%; max-height: 320px; display: block; margin: 0 auto; border-radius: var(--radius); }
+
+  .transmit-panel { margin-top: 2rem; }
+  canvas#scanCanvas {
+    display: block; width: 100%; height: auto; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .progress-track { height: 3px; background: var(--border); margin-top: .75rem; border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; background: var(--signal); transition: width .1s linear; }
+
+  .transmit-controls {
+    display: flex; align-items: center; gap: 1rem; margin-top: 1.1rem; flex-wrap: wrap;
+  }
+  button {
+    font-family: var(--font-mono); font-size: .85rem; cursor: pointer; border-radius: var(--radius);
+    padding: .65rem 1.4rem; border: 1px solid transparent;
+  }
+  .btn-primary { background: var(--signal); color: #06231F; font-weight: 600; }
+  .btn-primary:disabled { opacity: .5; cursor: default; }
+  .btn-ghost { background: transparent; border-color: var(--border); color: var(--text); }
+  button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  .status-line { font-family: var(--font-mono); font-size: .82rem; color: var(--text-dim); margin: 0; }
+  .status-busy { color: var(--amber); }
+  .status-ok { color: var(--signal); }
+  .status-error { color: var(--danger); }
+  .status-warn { color: var(--amber); }
+
+  details.settings { margin-top: 2.5rem; border-top: 1px solid var(--border); padding-top: 1.1rem; }
+  summary { cursor: pointer; font-family: var(--font-mono); font-size: .85rem; color: var(--text-dim); }
+  summary:hover { color: var(--text); }
+  .settings-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 1rem; margin-top: 1.1rem;
+  }
+  .settings-grid label { display: flex; flex-direction: column; gap: .35rem; font-size: .78rem; color: var(--text-dim); }
+  .settings-grid input {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: .5rem .6rem; border-radius: var(--radius); font-family: var(--font-mono); font-size: .85rem;
+  }
+  .settings-note { color: var(--text-dim); font-size: .78rem; margin-top: 1rem; line-height: 1.5; }
+
+  .howto { margin-top: 3rem; }
+  .howto h2 { font-family: var(--font-mono); font-size: 1.05rem; font-weight: 600; margin: 0 0 .9rem; }
+  .howto ol { padding-left: 1.3rem; margin: 0; color: var(--text-dim); line-height: 1.7; }
+  .howto li::marker { color: var(--signal); font-family: var(--font-mono); }
+  .howto .note { margin-top: 1rem; font-size: .85rem; color: var(--text-dim); }
+
+  footer {
+    text-align: center; padding: 2rem 1rem; color: var(--text-dim);
+    font-family: var(--font-mono); font-size: .78rem; border-top: 1px solid var(--border); margin-top: 3rem;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .uploader, .progress-fill { transition: border-color .15s ease, background .15s ease; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span><span class="mark">●</span> sender</span>
+  <a href="receiver.html">open receiver →</a>
+</div>
+
+<main>
+  <section class="hero">
+    <p class="eyebrow">img → snd</p>
+    <h1>Image to Sound</h1>
+    <p class="lede">Converts an image into an acoustic spectrogram and plays it through your speakers. A receiver listening nearby can rebuild the picture from the sound alone — no file transfer, no network.</p>
+  </section>
+
+  <section class="uploader" id="dropzone">
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <div id="dropContent">
+      <p>Drop an image here, or click to choose one</p>
+    </div>
+    <img id="previewImg" hidden alt="">
+  </section>
+
+  <section class="transmit-panel" id="transmitPanel" hidden>
+    <canvas id="scanCanvas" width="640" height="260"></canvas>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="transmit-controls">
+      <button id="playBtn" class="btn-primary">▶ Play</button>
+      <button id="stopBtn" class="btn-ghost" hidden>■ Stop</button>
+      <p class="status-line status-ok" id="statusLine">Ready</p>
+    </div>
+  </section>
+
+  <details class="settings">
+    <summary>Advanced settings</summary>
+    <div class="settings-grid">
+      <label>Duration (s)
+        <input type="number" id="setDuration" value="8" min="3" max="30" step="1">
+      </label>
+      <label>Columns
+        <input type="number" id="setColumns" value="160" min="32" max="512" step="8">
+      </label>
+      <label>Rows
+        <input type="number" id="setRows" value="96" min="16" max="256" step="8">
+      </label>
+      <label>Min freq (Hz)
+        <input type="number" id="setFmin" value="1000" min="200" max="4000" step="100">
+      </label>
+      <label>Max freq (Hz)
+        <input type="number" id="setFmax" value="12000" min="4000" max="18000" step="500">
+      </label>
+    </div>
+    <p class="settings-note">These five values must match on the receiver page, or the reconstructed image will come out stretched or misaligned. The defaults on both pages already match.</p>
+  </details>
+
+  <section class="howto">
+    <h2>How it works</h2>
+    <ol>
+      <li>Open <code>receiver.html</code> on the listening device.</li>
+      <li>Press <strong>Start Listening</strong> there first.</li>
+      <li>Come back here and press <strong>Play</strong>. Keep the two devices a few feet apart, in a quiet room if possible.</li>
+    </ol>
+    <p class="note">Testing alone? Just let this device's speaker play into its own microphone — open both pages in separate tabs or windows.</p>
+    <p class="note">Microphone access needs a secure context (HTTPS or localhost). Opening the receiver as a local <code>file://</code> page may block mic access in some browsers — GitHub Pages works reliably.</p>
+  </section>
+</main>
+
+<footer>Built by RODO_Dev</footer>
+
+<script>
+(() => {
+  'use strict';
+
+  const els = {
+    dropzone: document.getElementById('dropzone'),
+    dropContent: document.getElementById('dropContent'),
+    fileInput: document.getElementById('fileInput'),
+    previewImg: document.getElementById('previewImg'),
+    transmitPanel: document.getElementById('transmitPanel'),
+    scanCanvas: document.getElementById('scanCanvas'),
+    progressFill: document.getElementById('progressFill'),
+    playBtn: document.getElementById('playBtn'),
+    stopBtn: document.getElementById('stopBtn'),
+    statusLine: document.getElementById('statusLine'),
+    setDuration: document.getElementById('setDuration'),
+    setColumns: document.getElementById('setColumns'),
+    setRows: document.getElementById('setRows'),
+    setFmin: document.getElementById('setFmin'),
+    setFmax: document.getElementById('setFmax'),
+  };
+
+  // Protocol constants — must match receiver.html exactly.
+  const CHIRP_DUR = 0.35; // seconds, one sweep direction (up or down)
+  const GAP_DUR = 0.15;   // seconds of silence around each chirp
+  const AMP_FLOOR = 0.04; // pixels darker than this are treated as silence
+
+  let brightnessGrid = null; // brightnessGrid[col][row], row 0 = top of image, values 0..1
+  let settings = null;
+  let audioCtx = null;
+  let sourceNode = null;
+  let playState = 'idle'; // idle | encoding | playing | done
+  let timeline = null;
+  let rafId = null;
+
+  function clampNum(v, min, max, fallback) {
+    const n = parseFloat(v);
+    if (Number.isNaN(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+  function currentSettings() {
+    return {
+      duration: clampNum(els.setDuration.value, 3, 30, 8),
+      columns: Math.round(clampNum(els.setColumns.value, 32, 512, 160)),
+      rows: Math.round(clampNum(els.setRows.value, 16, 256, 96)),
+      fMin: clampNum(els.setFmin.value, 200, 4000, 1000),
+      fMax: clampNum(els.setFmax.value, 4000, 18000, 12000),
+    };
+  }
+  function freqForIndex(i, rows, fMin, fMax) {
+    if (rows <= 1) return fMin;
+    return fMin * Math.pow(fMax / fMin, i / (rows - 1));
+  }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // ---- Image intake ----
+  els.dropzone.addEventListener('click', () => els.fileInput.click());
+  els.dropzone.addEventListener('dragover', e => { e.preventDefault(); els.dropzone.classList.add('drag'); });
+  els.dropzone.addEventListener('dragleave', () => els.dropzone.classList.remove('drag'));
+  els.dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    els.dropzone.classList.remove('drag');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+  els.fileInput.addEventListener('change', () => {
+    if (els.fileInput.files[0]) handleFile(els.fileInput.files[0]);
+  });
+
+  function handleFile(file) {
+    if (!file.type || !file.type.startsWith('image/')) {
+      setStatus('That file is not an image.', 'error');
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    els.previewImg.onload = () => {
+      els.previewImg.hidden = false;
+      els.dropContent.hidden = true;
+      buildBrightnessGrid(els.previewImg);
+      els.transmitPanel.hidden = false;
+      playState = 'idle';
+      updatePlayButton();
+      setStatus('Ready to transmit', 'ok');
+      drawScanCanvas(-1);
+    };
+    els.previewImg.onerror = () => setStatus('Could not load that image.', 'error');
+    els.previewImg.src = url;
+  }
+
+  function buildBrightnessGrid(imgEl) {
+    settings = currentSettings();
+    const { columns, rows } = settings;
+    const off = document.createElement('canvas');
+    off.width = columns; off.height = rows;
+    const ctx = off.getContext('2d');
+    ctx.drawImage(imgEl, 0, 0, columns, rows);
+    const data = ctx.getImageData(0, 0, columns, rows).data;
+    const grid = [];
+    for (let c = 0; c < columns; c++) {
+      const col = new Float32Array(rows);
+      for (let r = 0; r < rows; r++) {
+        const idx = (r * columns + c) * 4;
+        const lum = (0.2126 * data[idx] + 0.7152 * data[idx + 1] + 0.0722 * data[idx + 2]) / 255;
+        col[r] = lum;
+      }
+      grid.push(col);
+    }
+    brightnessGrid = grid;
+  }
+
+  [els.setDuration, els.setColumns, els.setRows, els.setFmin, els.setFmax].forEach(inp => {
+    inp.addEventListener('change', () => {
+      if (!els.previewImg.hidden && els.previewImg.src) {
+        buildBrightnessGrid(els.previewImg);
+        drawScanCanvas(-1);
+        setStatus('Settings updated — ready to transmit', 'ok');
+        playState = 'idle';
+        updatePlayButton();
+      }
+    });
+  });
+
+  // ---- Scan canvas: doubles as "spectrogram of what's being sent" + scan progress ----
+  function drawScanCanvas(progressCol) {
+    const canvas = els.scanCanvas;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0A0D0F';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (!brightnessGrid) return;
+    const { columns, rows } = settings;
+    const cw = canvas.width / columns;
+    const ch = canvas.height / rows;
+    for (let c = 0; c < columns; c++) {
+      const dim = progressCol >= 0 && c > progressCol;
+      for (let r = 0; r < rows; r++) {
+        const v = brightnessGrid[c][r];
+        if (v < 0.02) continue;
+        const alpha = dim ? v * 0.28 : v;
+        ctx.fillStyle = `rgba(89,232,208,${alpha.toFixed(3)})`;
+        ctx.fillRect(c * cw, r * ch, Math.ceil(cw), Math.ceil(ch));
+      }
+    }
+    if (progressCol >= 0 && progressCol < columns) {
+      ctx.fillStyle = '#F0A94E';
+      ctx.fillRect(progressCol * cw, 0, 2, canvas.height);
+    }
+  }
+
+  // ---- Audio synthesis ----
+  function generateChirp(sampleRate, fMin, fMax, halfDur) {
+    const totalSamples = Math.floor(halfDur * 2 * sampleRate);
+    const buf = new Float32Array(totalSamples);
+    let phase = 0;
+    const fadeSamples = Math.max(1, Math.floor(0.005 * sampleRate));
+    for (let s = 0; s < totalSamples; s++) {
+      const t = s / sampleRate;
+      let f;
+      if (t < halfDur) {
+        f = fMin + (fMax - fMin) * (t / halfDur);
+      } else {
+        const t2 = t - halfDur;
+        f = fMax - (fMax - fMin) * (t2 / halfDur);
+      }
+      phase += 2 * Math.PI * f / sampleRate;
+      let amp = 0.9;
+      if (s < fadeSamples) amp *= s / fadeSamples;
+      if (s > totalSamples - fadeSamples) amp *= (totalSamples - s) / fadeSamples;
+      buf[s] = amp * Math.sin(phase);
+    }
+    return buf;
+  }
+
+  // Additive synthesis, phase-continuous per row, columns cross-faded to avoid clicks.
+  function buildContentBuffer(sampleRate, grid, cfg, onProgress) {
+    return new Promise(resolve => {
+      const { duration, columns, rows, fMin, fMax } = cfg;
+      const totalSamples = Math.floor(duration * sampleRate);
+      const buf = new Float32Array(totalSamples);
+      const freqs = new Float32Array(rows);
+      for (let i = 0; i < rows; i++) freqs[i] = freqForIndex(i, rows, fMin, fMax);
+      const phase = new Float32Array(rows);
+      let prevAmp = new Float32Array(rows);
+
+      let c = 0;
+      function step() {
+        const batchEnd = Math.min(columns, c + 8);
+        for (; c < batchEnd; c++) {
+          const startSample = Math.floor((c / columns) * totalSamples);
+          const endSample = Math.floor(((c + 1) / columns) * totalSamples);
+          const targetAmp = new Float32Array(rows);
+          const activeIdx = [];
+          for (let i = 0; i < rows; i++) {
+            const y = rows - 1 - i; // image row 0 (top) = highest frequency
+            let v = grid[c][y];
+            if (v < AMP_FLOOR) v = 0;
+            targetAmp[i] = v;
+            if (v > 0 || prevAmp[i] > 0) activeIdx.push(i);
+          }
+          const span = Math.max(1, endSample - startSample);
+          for (let s = startSample; s < endSample; s++) {
+            const t = span > 1 ? (s - startSample) / (span - 1) : 1;
+            let sample = 0;
+            for (let k = 0; k < activeIdx.length; k++) {
+              const i = activeIdx[k];
+              const amp = lerp(prevAmp[i], targetAmp[i], t);
+              phase[i] += 2 * Math.PI * freqs[i] / sampleRate;
+              if (amp > 0.0005) sample += amp * Math.sin(phase[i]);
+            }
+            buf[s] = sample;
+          }
+          prevAmp = targetAmp;
+        }
+        onProgress(c / columns);
+        if (c < columns) {
+          setTimeout(step, 0);
+        } else {
+          let peak = 0;
+          for (let s = 0; s < buf.length; s++) peak = Math.max(peak, Math.abs(buf[s]));
+          const scale = peak > 0 ? 0.85 / peak : 1;
+          if (scale !== 1) for (let s = 0; s < buf.length; s++) buf[s] *= scale;
+          resolve(buf);
+        }
+      }
+      step();
+    });
+  }
+
+  async function encodeAndPlay() {
+    if (!brightnessGrid) return;
+    playState = 'encoding';
+    updatePlayButton();
+    setStatus('Encoding spectrogram…', 'busy');
+
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      await audioCtx.resume();
+    } catch (err) {
+      setStatus('Audio playback is not available in this browser.', 'error');
+      playState = 'idle'; updatePlayButton();
+      return;
+    }
+
+    const sampleRate = audioCtx.sampleRate;
+    settings = currentSettings();
+    const startChirp = generateChirp(sampleRate, settings.fMin, settings.fMax, CHIRP_DUR);
+    const endChirp = generateChirp(sampleRate, settings.fMin, settings.fMax, CHIRP_DUR);
+    const gapSamples = Math.floor(GAP_DUR * sampleRate);
+
+    let content;
+    try {
+      content = await buildContentBuffer(sampleRate, brightnessGrid, settings, p => {
+        setStatus(`Encoding spectrogram… ${Math.round(p * 100)}%`, 'busy');
+      });
+    } catch (err) {
+      setStatus('Encoding failed — try a smaller resolution.', 'error');
+      playState = 'idle'; updatePlayButton();
+      return;
+    }
+
+    const total = startChirp.length + gapSamples + content.length + gapSamples + endChirp.length;
+    const full = new Float32Array(total);
+    let off = 0;
+    full.set(startChirp, off); off += startChirp.length + gapSamples;
+    full.set(content, off); off += content.length + gapSamples;
+    full.set(endChirp, off);
+
+    timeline = {
+      contentStart: (startChirp.length + gapSamples) / sampleRate,
+      contentEnd: (startChirp.length + gapSamples + content.length) / sampleRate,
+      totalDur: total / sampleRate,
+      startedAt: 0,
+    };
+
+    let audioBuffer;
+    try {
+      audioBuffer = audioCtx.createBuffer(1, total, sampleRate);
+      audioBuffer.copyToChannel(full, 0);
+      sourceNode = audioCtx.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.connect(audioCtx.destination);
+    } catch (err) {
+      setStatus('Could not prepare audio output.', 'error');
+      playState = 'idle'; updatePlayButton();
+      return;
+    }
+
+    sourceNode.onended = () => {
+      if (playState === 'playing') finishPlayback();
+    };
+
+    playState = 'playing';
+    updatePlayButton();
+    timeline.startedAt = audioCtx.currentTime;
+    try {
+      sourceNode.start();
+    } catch (err) {
+      setStatus('Playback failed to start.', 'error');
+      playState = 'idle'; updatePlayButton();
+      return;
+    }
+    animatePlayback();
+  }
+
+  function animatePlayback() {
+    if (playState !== 'playing') return;
+    const elapsed = audioCtx.currentTime - timeline.startedAt;
+    const frac = Math.min(1, elapsed / timeline.totalDur);
+    els.progressFill.style.width = `${frac * 100}%`;
+
+    if (elapsed < timeline.contentStart) {
+      setStatus('Transmitting sync tone…', 'busy');
+      drawScanCanvas(-1);
+    } else if (elapsed < timeline.contentEnd) {
+      const colFrac = (elapsed - timeline.contentStart) / (timeline.contentEnd - timeline.contentStart);
+      const col = Math.min(settings.columns - 1, Math.floor(colFrac * settings.columns));
+      setStatus(`Transmitting… column ${col + 1}/${settings.columns}`, 'busy');
+      drawScanCanvas(col);
+    } else {
+      setStatus('Transmitting end marker…', 'busy');
+      drawScanCanvas(settings.columns);
+    }
+
+    if (elapsed < timeline.totalDur) {
+      rafId = requestAnimationFrame(animatePlayback);
+    }
+  }
+
+  function finishPlayback() {
+    playState = 'done';
+    updatePlayButton();
+    setStatus('Done', 'ok');
+    els.progressFill.style.width = '100%';
+    if (rafId) cancelAnimationFrame(rafId);
+  }
+
+  function stopPlayback() {
+    if (sourceNode) {
+      try { sourceNode.onended = null; sourceNode.stop(); } catch (e) { /* already stopped */ }
+    }
+    if (rafId) cancelAnimationFrame(rafId);
+    playState = 'idle';
+    updatePlayButton();
+    setStatus('Stopped', 'ok');
+    els.progressFill.style.width = '0%';
+    drawScanCanvas(-1);
+  }
+
+  function updatePlayButton() {
+    const busy = playState === 'encoding' || playState === 'playing';
+    els.playBtn.hidden = busy;
+    els.stopBtn.hidden = !busy;
+    els.playBtn.disabled = playState === 'encoding';
+  }
+
+  function setStatus(text, kind) {
+    els.statusLine.textContent = text;
+    els.statusLine.className = 'status-line status-' + (kind || 'ok');
+  }
+
+  els.playBtn.addEventListener('click', encodeAndPlay);
+  els.stopBtn.addEventListener('click', stopPlayback);
+})();
+</script>
+</body>
+</html>
